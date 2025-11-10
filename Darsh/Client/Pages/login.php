@@ -3,31 +3,62 @@ require_once 'DB/connetction.php';
 $error_message = "";
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $username = $_POST["username"];
+    // ⚠️ Security Improvement: Use prepared statements to prevent SQL Injection
+    $username = trim($_POST["username"]); // Trim input
     $password = $_POST["password"];
 
-    $sql = "SELECT * FROM user_details WHERE email = '$username'";
-    $result = mysqli_query($conn, $sql);
+    // Use prepared statement to securely fetch the user's details and hashed password
+    $sql = "SELECT ID, Username, Password FROM user_details WHERE email = ?";
     
-    if(!($result)){
-         $error_message = "Invalid username or password. Please try again.";
-         exit();
-    }
-
-    $row = mysqli_fetch_assoc($result);
-    if (password_verify($password, $row['Password'])) {
-        session_start();
-        $_SESSION['User_Logged-In'] = true;
-        $_SESSION['admin_username'] = $row['Username'];
-        $_SESSION['admin_id'] = $row['ID'];
-        $_SESSION['LAST_ACTIVITY'] = time();
-        header("Location: /Darsh/Client/Home");
-        exit();
+    // Prepare statement
+    $stmt = mysqli_prepare($conn, $sql);
+    
+    if ($stmt) {
+        // Bind parameter (s for string)
+        mysqli_stmt_bind_param($stmt, "s", $username);
+        
+        // Execute statement
+        mysqli_stmt_execute($stmt);
+        
+        // Get the result set
+        $result = mysqli_stmt_get_result($stmt);
+        
+        // Check if a user was found (i.e., if there is a row)
+        if (mysqli_num_rows($result) === 1) {
+            $row = mysqli_fetch_assoc($result);
+            
+            // Verify the password
+            if (password_verify($password, $row['Password'])) {
+                // Success: Start session and redirect
+                session_start();
+                $_SESSION['User_Logged-In'] = true;
+                $_SESSION['admin_username'] = $row['Username'];
+                $_SESSION['admin_id'] = $row['ID'];
+                $_SESSION['LAST_ACTIVITY'] = time();
+                
+                // Close statement before redirecting
+                mysqli_stmt_close($stmt); 
+                
+                header("Location: /Darsh/Client/Home");
+                exit();
+            } else {
+                // Failure: Password incorrect
+                $error_message = "Invalid username or password. Please try again.";
+            }
+        } else {
+            // Failure: Username/Email not found
+            $error_message = "Invalid username or password. Please try again.";
+        }
+        
+        // Close statement if it was opened
+        mysqli_stmt_close($stmt); 
+        
     } else {
-        $error_message = "Invalid username or password. Please try again.";
+        // Handle database error during preparation
+        $error_message = "A database error occurred. Please try again later.";
+        // Log error: mysqli_error($conn)
     }
 }
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -225,3 +256,4 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </div>
 </body>
 </html>
+
